@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 github_token = os.getenv('TOKEN')
-repo = 'awakzdev/finance'
+repo = 'awakzdev/finance-data'
 branch = 'main'
 
 # Step 1: Fetch today's date in the format day/month/year
@@ -26,7 +26,8 @@ for symbol in symbols:
     data.index = data.index.strftime('%d/%m/%Y')
 
     # Step 3: Save the data to a CSV file with the symbol as a prefix
-    csv_filename = f'{symbol.lower()}_stock_data.csv'
+    sanitized_symbol = symbol.replace('^', '')
+    csv_filename = f'{sanitized_symbol.lower()}_stock_data.csv'
     data.to_csv(csv_filename)
     file_path_in_repo = csv_filename  # Use the same name for GitHub
 
@@ -61,7 +62,7 @@ for symbol in symbols:
     content_base64 = base64.b64encode(content).decode('utf-8')
 
     # Step 6: Create the payload for the GitHub API request
-    commit_message = f'Update {symbol} stock data'
+    commit_message = f'Update {sanitized_symbol} stock data'
     data = {
         'message': commit_message,
         'content': content_base64,

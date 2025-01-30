@@ -3,8 +3,11 @@ import requests
 import base64
 import yfinance as yf
 from datetime import datetime
+from dotenv import load_dotenv
 
 # Retrieve the GitHub token from environment variables
+load_dotenv()
+
 github_token = os.getenv('TOKEN')
 if not github_token:
     raise ValueError("TOKEN environment variable not set")
@@ -34,11 +37,12 @@ for symbol in symbols:
         # Step 3: Save the data to a CSV file with the symbol as a prefix
         sanitized_symbol = symbol.replace('^', '')
         csv_filename = f'{sanitized_symbol.lower()}_stock_data.csv'
-        data.to_csv(csv_filename)
-        file_path_in_repo = csv_filename  # Use the same name for GitHub
-
+        
+        # Ensure the DataFrame is saved correctly
+        data.to_csv(csv_filename, index=True, index_label='Date')
+        
         # Step 4: Get the current file's SHA (needed to update a file in the repository)
-        url = f'https://api.github.com/repos/{repo}/contents/{file_path_in_repo}'
+        url = f'https://api.github.com/repos/{repo}/contents/{csv_filename}'
         headers = {'Authorization': f'token {github_token}'}
 
         response = requests.get(url, headers=headers)
@@ -47,14 +51,14 @@ for symbol in symbols:
         if response.status_code == 200:
             # File exists, extract the SHA
             sha = response_json['sha']
-            print(f'File {file_path_in_repo} exists, updating it.')
+            print(f'File {csv_filename} exists, updating it.')
         elif response.status_code == 404:
             # File does not exist, we'll create a new one
             sha = None
-            print(f'File {file_path_in_repo} does not exist, creating a new one.')
+            print(f'File {csv_filename} does not exist, creating a new one.')
         else:
             # Other errors
-            print(f'Unexpected error while accessing {file_path_in_repo}: {response_json}')
+            print(f'Unexpected error while accessing {csv_filename}: {response_json}')
             continue
 
         # Step 5: Read the new CSV file and encode it in base64
@@ -79,9 +83,9 @@ for symbol in symbols:
 
         # Check if the file was updated/created successfully
         if response.status_code in [200, 201]:
-            print(f'File {file_path_in_repo} updated successfully in the repository.')
+            print(f'File {csv_filename} updated successfully in the repository.')
         else:
-            print(f'Failed to update the file {file_path_in_repo} in the repository.')
+            print(f'Failed to update the file {csv_filename} in the repository.')
             print('Response:', response.json())
 
     except Exception as e:

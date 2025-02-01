@@ -15,7 +15,8 @@ def validate_and_fix_csv(csv_filename):
     Date,Open,High,Low,Close,Adj Close,Volume
     followed by data lines starting with a date in dd/mm/yyyy format.
     
-    If the CSV is corrupted, it removes the incorrect lines and rewrites the CSV.
+    If the CSV is corrupted, it removes any lines after the first invalid row
+    (i.e. any line whose first field is not a valid date).
     
     Args:
         csv_filename (str): The path to the CSV file to validate and fix.
@@ -62,13 +63,15 @@ def validate_and_fix_csv(csv_filename):
                 else:
                     print(f"Skipping row with incorrect number of columns: {row}")
             else:
-                print(f"Skipping invalid data row: {row}")
+                # As soon as a row does not start with a date, we break out of the loop.
+                print(f"Encountered non-data row: {row}. Discarding all subsequent lines.")
+                break
 
         if len(valid_data) < 2:
             print(f"No valid data found in {csv_filename}.")
             return False
 
-        # Rewrite the CSV with valid data
+        # Rewrite the CSV with valid data only
         with open(csv_filename, 'w', newline='', encoding='utf-8') as outfile:
             writer = csv.writer(outfile)
             writer.writerows(valid_data)

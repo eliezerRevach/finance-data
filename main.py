@@ -6,6 +6,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import csv
 import re
+import pandas as pd
 
 def normalize_header(header_row):
     """Trim whitespace from each column in the header row."""
@@ -19,8 +20,7 @@ def validate_and_fix_csv(csv_filename):
     Date,Open,High,Low,Close,Adj Close,Volume
     followed by data lines starting with a date in dd/mm/yyyy format.
     
-    If the CSV is corrupted, it removes any lines after the first invalid row
-    (i.e. any line whose first field is not a valid date).
+    If the CSV is corrupted, it removes any lines after the first invalid row.
     
     Args:
         csv_filename (str): The path to the CSV file to validate and fix.
@@ -63,13 +63,12 @@ def validate_and_fix_csv(csv_filename):
             print(f"No data found after header in {csv_filename}.")
             return False
 
-        # Validate data rows
-        valid_data = [valid_rows[0]]  # Start with the header
+        # Validate data rows: stop reading after the first invalid row.
+        valid_data = [valid_rows[0]]  # Include the header
         for row in valid_rows[1:]:
             if not row:
                 continue  # Skip empty lines
             if date_pattern.match(row[0]):
-                # Ensure the row has the correct number of columns
                 if len(row) == len(expected_header):
                     valid_data.append(row)
                 else:
@@ -97,7 +96,6 @@ def validate_and_fix_csv(csv_filename):
 def main():
     # Retrieve the GitHub token from environment variables
     load_dotenv()
-    
     github_token = os.getenv('TOKEN')
     if not github_token:
         raise ValueError("TOKEN environment variable not set")
@@ -107,7 +105,7 @@ def main():
     repo = 'awakzdev/finance-data'
     branch = 'main'
     
-    # Step 1: Fetch today's date in the format day/month/year
+    # Step 1: Fetch today's date in the format YYYY-MM-DD
     today_date = datetime.now().strftime('%Y-%m-%d')
     
     # Symbols to process
@@ -122,63 +120,75 @@ def main():
                 print(f"No data fetched for symbol: {symbol}")
                 continue
 
-            # Convert the index (dates) to the desired format (day/month/year)
-            data.index = data.index.strftime('%d/%m/%Y')
+            # Flatten multi-index columns if necessary
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
 
-            # Step 3: Save the data to a CSV file with the symbol as a prefix
+            # Convert the index (dates) to the desired format (dd/mm/yyyy)
+            data.index = data.index.strftime('%d/%m/%Y')
+            
+            # Adjust columns to match the expected CSV format:
+            # Expected header: Date,Open,High,Low,Close,Adj Close,Volume
+            # For example, for QLD the DataFrame might have: Price, Close, High, Low, Open, Volume
+            # Remove the 'Price' column if it exists.
+            if 'Price' in data.columns:
+                data.drop(columns='Price', inplace=True)
+            
+            # Create 'Adj Close' if it's not present (using 'Close' as a fallback)
+            if 'Adj Close' not in data.columns:
+                data['Adj Close'] = data['Close']
+            
+            # Reorder the columns to match the expected header.
+            expected_cols = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+            data = data[expected_cols]
+            
+            # Step 3: Save the data to a CSV file with the symbol as a prefix.
             sanitized_symbol = symbol.replace('^', '')
             csv_filename = f'{sanitized_symbol.lower()}_stock_data.csv'
             
-            # Ensure the DataFrame is saved correctly with "Date" as index label
+            # Write CSV with "Date" as the index label so the header becomes:
+            # Date,Open,High,Low,Close,Adj Close,Volume
             data.to_csv(csv_filename, index=True, index_label='Date')
             print(f"CSV {csv_filename} saved successfully.")
 
-            # Step 4: Validate and fix the CSV if necessary
+            # Step 4: Validate and fix the CSV if necessary.
             if not validate_and_fix_csv(csv_filename):
                 print(f"Skipping upload for {csv_filename} due to validation failure.")
                 continue  # Skip uploading this file
 
-            # Step 5: Get the current file's SHA (needed to update a file in the repository)
+            # Step 5: Get the current file's SHA from GitHub (if it exists)
             url = f'https://api.github.com/repos/{repo}/contents/{csv_filename}'
             headers = {'Authorization': f'token {github_token}'}
-
             response = requests.get(url, headers=headers)
             response_json = response.json()
 
             if response.status_code == 200:
-                # File exists, extract the SHA
                 sha = response_json['sha']
                 print(f'File {csv_filename} exists, updating it.')
             elif response.status_code == 404:
-                # File does not exist, we'll create a new one
                 sha = None
                 print(f'File {csv_filename} does not exist, creating a new one.')
             else:
-                # Other errors
                 print(f'Unexpected error while accessing {csv_filename}: {response_json}')
                 continue
 
-            # Step 6: Read the new CSV file and encode it in base64
+            # Step 6: Read the new CSV file and encode it in base64.
             with open(csv_filename, 'rb') as f:
                 content = f.read()
             content_base64 = base64.b64encode(content).decode('utf-8')
 
-            # Step 7: Create the payload for the GitHub API request
+            # Step 7: Create the payload for the GitHub API request.
             commit_message = f'Update {sanitized_symbol} stock data'
             payload = {
                 'message': commit_message,
                 'content': content_base64,
                 'branch': branch
             }
-
-            # Include the SHA if the file exists (for updating)
             if sha:
                 payload['sha'] = sha
 
-            # Step 8: Push the file to the repository
+            # Step 8: Push the file to the repository.
             response = requests.put(url, headers=headers, json=payload)
-
-            # Check if the file was updated/created successfully
             if response.status_code in [200, 201]:
                 print(f'File {csv_filename} updated successfully in the repository.')
             else:

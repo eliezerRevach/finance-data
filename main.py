@@ -7,6 +7,10 @@ from dotenv import load_dotenv
 import csv
 import re
 
+def normalize_header(header_row):
+    """Trim whitespace from each column in the header row."""
+    return [col.strip() for col in header_row]
+
 def validate_and_fix_csv(csv_filename):
     """
     Validates the CSV format and fixes it if corrupted.
@@ -32,16 +36,24 @@ def validate_and_fix_csv(csv_filename):
             reader = csv.reader(infile)
             lines = list(reader)
 
-        # Find the index where the correct header starts
+        # Debug: Print the first few lines of the CSV for inspection
+        print(f"Debug: First 3 lines from {csv_filename}:")
+        for line in lines[:3]:
+            print(line)
+
+        # Find the index where the correct header starts (using normalization)
         header_index = -1
         for i, row in enumerate(lines):
-            if row == expected_header:
+            if normalize_header(row) == expected_header:
                 header_index = i
                 break
 
         if header_index == -1:
             print(f"Header not found in {csv_filename}. The file may be corrupted.")
             return False
+
+        # Debug: Print the header row found
+        print(f"Header found in {csv_filename} at line {header_index}: {lines[header_index]}")
 
         # Extract the relevant rows starting from the header
         valid_rows = lines[header_index:]
@@ -63,7 +75,6 @@ def validate_and_fix_csv(csv_filename):
                 else:
                     print(f"Skipping row with incorrect number of columns: {row}")
             else:
-                # As soon as a row does not start with a date, we break out of the loop.
                 print(f"Encountered non-data row: {row}. Discarding all subsequent lines.")
                 break
 
@@ -118,7 +129,7 @@ def main():
             sanitized_symbol = symbol.replace('^', '')
             csv_filename = f'{sanitized_symbol.lower()}_stock_data.csv'
             
-            # Ensure the DataFrame is saved correctly
+            # Ensure the DataFrame is saved correctly with "Date" as index label
             data.to_csv(csv_filename, index=True, index_label='Date')
             print(f"CSV {csv_filename} saved successfully.")
 
